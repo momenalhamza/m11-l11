@@ -93,6 +93,16 @@ are unimplemented). Implement `api/observability.py`, wire the three
 middlewares + mount `/metrics` in `api/main.py`, and implement
 `eval_rag_smoke.py`; then re-run.
 
+## Observability
+
+Three Prometheus metric families are declared in `api/observability.py` and exposed at `/metrics` via `prometheus_client.make_asgi_app()`:
+
+- **`requests_total`** (Counter, labels: `path`, `status`): increments once per HTTP response, giving per-route request volume and status-code breakdown.
+- **`request_latency_seconds`** (Histogram, label: `path`): records wall-clock duration of every request using the default Prometheus latency buckets (`0.005 s` to `10 s`). The defaults were chosen because the M10 endpoints span sub-millisecond health checks through multi-second RAG calls, and the standard bucket sequence covers that full range without custom tuning.
+- **`inflight_requests`** (Gauge, no labels): incremented on request entry and decremented in a `finally` block, exposing current concurrency.
+
+To read `/metrics`, run `curl http://localhost:8000/metrics` and look for `# HELP` / `# TYPE` comment lines followed by sample lines. Each `requests_total{path=..., status=...}` line shows the cumulative count for that (path, status) combination since the process started.
+
 ## Tear down
 
 ```bash
