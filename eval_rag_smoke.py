@@ -22,6 +22,7 @@ import json
 import os
 import sys
 
+import httpx
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
@@ -32,20 +33,26 @@ def score_grounding(response: dict, candidate_ids) -> bool:
     `response` is the JSON body returned by POST /rag/answer.
     `candidate_ids` is the set of chunk_ids returned for the same question.
     """
-    # TODO: implement per the methodology paragraph above.
-    # Both conditions must hold:
-    #   (a) at least one citation is present
-    #   (b) every cited chunk_id is in the candidate set
-    raise NotImplementedError
+    citations = response.get("citations", [])
+    if len(citations) < 1:
+        return False
+    for citation in citations:
+        if citation.get("chunk_id") not in candidate_ids:
+            return False
+    return True
 
 
 def evaluate_question(question: dict) -> bool:
     """Issue one POST /rag/answer; return True iff the response is grounded."""
-    # TODO: POST to /rag/answer with the question + k from the fixture.
-    # Use a generous timeout -- /rag/answer cold-cache can take ~10 s.
-    # Read the candidate set from the response body's `retrieved` field.
-    # Call score_grounding(response_body, candidate_ids).
-    raise NotImplementedError
+    resp = httpx.post(
+        f"{API_URL}/rag/answer",
+        json={"question": question["question"], "k": question.get("k", 4)},
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    candidate_ids = {chunk["chunk_id"] for chunk in body.get("retrieved", [])}
+    return score_grounding(body, candidate_ids)
 
 
 def main() -> int:
@@ -54,9 +61,15 @@ def main() -> int:
     with open(fixture_path) as fh:
         questions = json.load(fh)
 
-    # TODO: iterate `questions`, call evaluate_question on each, print PASS or
-    # FAIL per question, return 0 iff every question is grounded, else 1.
-    raise NotImplementedError
+    all_passed = True
+    for q in questions:
+        grounded = evaluate_question(q)
+        label = "PASS" if grounded else "FAIL"
+        print(f"{label} [{q['question_id']}]: {q['question']}")
+        if not grounded:
+            all_passed = False
+
+    return 0 if all_passed else 1
 
 
 if __name__ == "__main__":
